@@ -49,3 +49,10 @@ packages/
 # 테스트 결과
 TestResults/
 [Cc]overage/
+
+# ContextBuilder 민감 파일 (자동 추가)
+CLAUDE.md
+AGENTS.md
+.claude/
+.env.*
+*.env
