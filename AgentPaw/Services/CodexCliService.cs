@@ -24,8 +24,9 @@ public class CodexCliService
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
-                FileName = "codex",
-                Arguments = "--version",
+                // npm 셸심(codex.cmd)은 cmd.exe를 통해 실행해야 한다 (Windows)
+                FileName = "cmd.exe",
+                Arguments = "/c codex --version",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -65,8 +66,9 @@ public class CodexCliService
         var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = "codex",
-            Arguments = $"exec --skip-git-repo-check -s read-only --color never --output-last-message \"{outPath}\" -",
+            // npm 셸심(codex.cmd)은 cmd.exe를 통해 실행해야 한다 (Windows)
+            FileName = "cmd.exe",
+            Arguments = $"/c codex exec --skip-git-repo-check -s read-only --color never --output-last-message \"{outPath}\" -",
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,

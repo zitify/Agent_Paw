@@ -87,8 +87,10 @@ public class AiClientService
         {
             var provider = ApiKeyService.ModelToProvider(model);
 
-            // Claude CLI가 활성화되어 있으면 API Key 없이도 시도 가능
-            var cliAvailable = provider == "CLAUDE" && await _claudeCliService.IsEnabledAsync().ConfigureAwait(false);
+            // Claude CLI 또는 Codex CLI가 활성화되어 있으면 API Key 없이도 시도 가능
+            var cliAvailable = provider == "CLAUDE"
+                && (await _claudeCliService.IsEnabledAsync().ConfigureAwait(false)
+                    || await _codexCliService.IsEnabledAsync().ConfigureAwait(false));
             var hasKey = await _apiKeyService.HasApiKeyAsync(provider).ConfigureAwait(false);
 
             if (!hasKey && !cliAvailable)
