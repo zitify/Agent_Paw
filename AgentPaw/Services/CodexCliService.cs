@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 
 namespace AgentPaw.Services;
 
@@ -58,11 +59,14 @@ public class CodexCliService
             ? $"{systemPrompt}\n\n===\n{userPrompt}"
             : userPrompt;
 
+        // codex exec의 stdout에는 배너·세션 로그가 섞이므로, 최종 답변만 파일로 받는다.
+        var outPath = Path.Combine(Path.GetTempPath(), $"codex-out-{Guid.NewGuid():N}.txt");
+
         var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
             FileName = "codex",
-            Arguments = "exec --skip-git-repo-check -s read-only --color never -",
+            Arguments = $"exec --skip-git-repo-check -s read-only --color never --output-last-message \"{outPath}\" -",
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -103,12 +107,15 @@ public class CodexCliService
             if (process.ExitCode != 0)
                 throw new InvalidOperationException($"CODEX_CLI_FAILED: exit {process.ExitCode} {stderr.Trim()}");
 
-            return stdout.Trim();
+            // 최종 답변 파일을 우선 사용, 비어 있으면 stdout 폴백
+            var lastMsg = File.Exists(outPath) ? (await File.ReadAllTextAsync(outPath)).Trim() : string.Empty;
+            return string.IsNullOrEmpty(lastMsg) ? stdout.Trim() : lastMsg;
         }
         finally
         {
             lock (_lock) _activeProcesses.Remove(process);
             process.Dispose();
+            try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
         }
     }
 
