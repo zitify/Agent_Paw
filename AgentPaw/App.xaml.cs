@@ -254,6 +254,10 @@ public partial class App : Application
             _ = Task.Run(async () =>
             {
                 var services = _host.Services;
+
+                // Claude CLI 콜드스타트 선제거 — CLI 활성 시 프로세스를 미리 데워 풀에 채운다 (UI 비차단)
+                _ = services.GetRequiredService<ClaudeCliService>().EnsureWarmStartedAsync();
+
                 var startups = new[]
                 {
                     SafeStartAsync(() => services.GetRequiredService<PubSubPullService>().StartAsync()),
