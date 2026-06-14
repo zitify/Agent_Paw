@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Google.Apis.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -46,6 +47,20 @@ public class AuthService
         _clientSecret = configuration["Google:ClientSecret"] ?? string.Empty;
         _redirectUri = configuration["Google:RedirectUri"] ?? "http://localhost:47891/auth/callback";
         IsDevBypassEnabled = configuration.GetValue<bool>("DevBypass");
+        if (IsDevBypassEnabled)
+        {
+            if (!string.Equals(
+                    Environment.GetEnvironmentVariable("AGENTPAW_ALLOW_DEV_BYPASS"),
+                    "true",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "DevBypass=true requires AGENTPAW_ALLOW_DEV_BYPASS=true and must never be enabled in production.");
+            }
+            Console.Error.WriteLine("[AuthService] WARNING: DevBypass is ENABLED. " +
+                "This disables authentication and must not be used in production. " +
+                "Set \"DevBypass\": false in appsettings.json for production deployments.");
+        }
     }
 
     public string GetLoginUrl()
@@ -60,7 +75,7 @@ public class AuthService
     {
         // Exchange code for tokens
         var tokenResponse = await ExchangeCodeAsync(code);
-        var userInfo = DecodeIdToken(tokenResponse.IdToken);
+        var userInfo = await ValidateGoogleIdTokenAsync(tokenResponse.IdToken);
 
         await using var db = await _dbFactory.CreateDbContextAsync();
 
@@ -303,7 +318,9 @@ public class AuthService
             "AgentPaw", "data");
         Directory.CreateDirectory(dataDir);
         var sessionPath = Path.Combine(dataDir, ".session");
-        File.WriteAllText(sessionPath, $"{tokenId}\n{jwt}");
+        // 세션 파일에 토큰을 암호화하여 저장한다. 평문 JWT 노출을 방지한다.
+        var encryptedJwt = _encryption.Encrypt(jwt);
+        File.WriteAllText(sessionPath, $"{tokenId}\n{encryptedJwt}");
     }
 
     /// <summary>
@@ -323,7 +340,12 @@ public class AuthService
             if (lines.Length < 2) return null;
 
             var tokenId = lines[0].Trim();
-            var jwt = lines[1].Trim();
+            var encryptedJwt = lines[1].Trim();
+
+            // 세션 파일의 JWT는 암호화되어 저장된다. 복호화 후 검증한다.
+            string jwt;
+            try { jwt = _encryption.Decrypt(encryptedJwt); }
+            catch { ClearPersistedSession(); return null; }
 
             var verified = VerifyToken(jwt);
             if (verified == null) { ClearPersistedSession(); return null; }
@@ -524,24 +546,42 @@ public class AuthService
                ?? throw new InvalidOperationException($"Failed to parse token response: {responseBody}");
     }
 
-    private static GoogleUserInfo DecodeIdToken(string idToken)
+    private async Task<GoogleUserInfo> ValidateGoogleIdTokenAsync(string idToken)
     {
-        var parts = idToken.Split('.');
-        if (parts.Length != 3)
-            throw new FormatException("Invalid ID token");
+        if (string.IsNullOrWhiteSpace(_clientId))
+            throw new InvalidOperationException("Google ClientId is not configured.");
+        if (string.IsNullOrWhiteSpace(idToken))
+            throw new InvalidOperationException("Google ID token is missing.");
 
-        var payload = parts[1];
-        // Pad base64url
-        payload = payload.Replace('-', '+').Replace('_', '/');
-        switch (payload.Length % 4)
+        GoogleJsonWebSignature.Payload payload;
+        try
         {
-            case 2: payload += "=="; break;
-            case 3: payload += "="; break;
+            payload = await GoogleJsonWebSignature.ValidateAsync(
+                idToken,
+                new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { _clientId }
+                });
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Google ID token validation failed.", ex);
         }
 
-        var json = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
-        return JsonSerializer.Deserialize<GoogleUserInfo>(json)
-               ?? throw new InvalidOperationException("Failed to decode ID token");
+        if (string.IsNullOrWhiteSpace(payload.Subject) ||
+            string.IsNullOrWhiteSpace(payload.Email) ||
+            !payload.EmailVerified)
+        {
+            throw new InvalidOperationException("Google ID token is missing required verified identity claims.");
+        }
+
+        return new GoogleUserInfo
+        {
+            Sub = payload.Subject,
+            Email = payload.Email,
+            Name = string.IsNullOrWhiteSpace(payload.Name) ? payload.Email.Split('@')[0] : payload.Name,
+            Picture = payload.Picture
+        };
     }
 }
 

@@ -42,15 +42,15 @@ public class ConfigLoaderService
     /// </summary>
     public void InvalidateAll() => _configCache.Clear();
 
-    public async Task<PersonaConfig> GetPersonaConfigAsync(string personaId, string projectId)
+    public async Task<PersonaConfig> GetPersonaConfigAsync(string personaId, string projectId, CancellationToken ct = default)
     {
         var cacheKey = (personaId, projectId);
         if (_configCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             return cached.Config;
 
-        await using var db = await _dbFactory.CreateDbContextAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        var persona = await db.Personas.FindAsync(personaId);
+        var persona = await db.Personas.FindAsync(new object?[] { personaId }, ct);
         if (persona == null)
         {
             return new PersonaConfig
@@ -72,7 +72,7 @@ public class ConfigLoaderService
             where pi.ProjectId == projectId
             orderby f.Name
             select new { f.Name, f.Content }
-        ).ToListAsync();
+        ).ToListAsync(ct);
 
         // 페르소나 지침 (2순위) — persona_instruction 링크 + persona.Instructions 프리폼 필드
         var personaLinkedInstructions = await (
@@ -81,7 +81,7 @@ public class ConfigLoaderService
             where pi.PersonaId == personaId
             orderby f.Name
             select new { f.Name, f.Content }
-        ).ToListAsync();
+        ).ToListAsync(ct);
 
         // 시스템 프롬프트 조합: 역할 정의 + 우선순위 선언 + 프로젝트 지침 + 페르소나 지침 + 언어 정책
         var parts = new List<string>();
@@ -151,17 +151,17 @@ public class ConfigLoaderService
         return config;
     }
 
-    public async Task<List<Persona>> ListPersonasAsync(string projectId)
+    public async Task<List<Persona>> ListPersonasAsync(string projectId, CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var linkedIds = await db.ProjectPersonas
             .Where(pp => pp.ProjectId == projectId)
             .Select(pp => pp.PersonaId)
-            .ToListAsync();
+            .ToListAsync(ct);
         return await db.Personas
             .Where(p => linkedIds.Contains(p.PersonaId))
             .OrderBy(p => p.SortOrder)
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 }
 

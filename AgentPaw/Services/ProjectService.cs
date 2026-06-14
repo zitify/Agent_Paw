@@ -201,25 +201,25 @@ public class ProjectService
         var repoPath = project.GitRepoPath;
 
         // Raw SQL로 관련 데이터 삭제 (존재하지 않는 테이블은 자동 스킵)
-        var tables = new[]
+        var deleteProjectRowsSqlList = new[]
         {
-            "project_instruction",
-            "event_log",
-            "snapshot",
-            "wiki_document",
-            "audit_log",
-            "persona",
-            "persona_group",
-            "workspace",
-            "project_member",
+            "DELETE FROM project_instruction WHERE project_id = {0}",
+            "DELETE FROM event_log WHERE project_id = {0}",
+            "DELETE FROM snapshot WHERE project_id = {0}",
+            "DELETE FROM wiki_document WHERE project_id = {0}",
+            "DELETE FROM audit_log WHERE project_id = {0}",
+            "DELETE FROM persona WHERE project_id = {0}",
+            "DELETE FROM persona_group WHERE project_id = {0}",
+            "DELETE FROM workspace WHERE project_id = {0}",
+            "DELETE FROM project_member WHERE project_id = {0}",
         };
 
-        foreach (var table in tables)
+        foreach (var sql in deleteProjectRowsSqlList)
         {
             try
             {
                 await db.Database.ExecuteSqlRawAsync(
-                    $"DELETE FROM {table} WHERE project_id = {{0}}", projectId);
+                    sql, projectId);
             }
             catch { /* 테이블 미존재 시 무시 */ }
         }

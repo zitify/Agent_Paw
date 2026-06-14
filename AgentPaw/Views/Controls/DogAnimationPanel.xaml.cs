@@ -185,7 +185,7 @@ public partial class DogAnimationPanel : UserControl
             _bubbleText = new TextBlock
             {
                 FontSize = 10,
-                FontFamily = new FontFamily("Segoe UI"),
+                FontFamily = new FontFamily("Pretendard Variable, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif"),
                 Foreground = new SolidColorBrush(Color.FromRgb(28, 28, 28)),
                 MaxWidth = 160,
                 TextWrapping = TextWrapping.NoWrap,
@@ -215,7 +215,7 @@ public partial class DogAnimationPanel : UserControl
                 Text = _persona.Label,
                 Width = 72,
                 FontSize = 9,
-                FontFamily = new FontFamily("Segoe UI"),
+                FontFamily = new FontFamily("Pretendard Variable, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif"),
                 TextAlignment = TextAlignment.Center,
                 Foreground = new SolidColorBrush(Color.FromArgb(165, 200, 169, 110)),
                 IsHitTestVisible = false

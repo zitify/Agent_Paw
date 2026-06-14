@@ -74,7 +74,14 @@ public class DevAgentService
         IProgress<DevStreamEvent> progress,
         CancellationToken cancellationToken)
     {
-        var args = "-p --dangerously-skip-permissions --output-format stream-json";
+        var args = "-p --output-format stream-json";
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("AGENTPAW_ALLOW_UNSAFE_CLAUDE"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            args += " --dangerously-skip-permissions";
+        }
         if (continueSession) args += " --continue";
 
         if (!Directory.Exists(workingDirectory))

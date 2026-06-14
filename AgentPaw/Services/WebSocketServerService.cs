@@ -11,6 +11,8 @@ namespace AgentPaw.Services;
 public class WebSocketServerService
 {
     private readonly IDbContextFactory<AgentPawDbContext> _dbFactory;
+    private readonly AuthService _authService;
+    private readonly EncryptionService _encryption;
     private HttpListener? _listener;
     private CancellationTokenSource? _cts;
     private readonly ConcurrentDictionary<string, WebSocketClient> _clients = new();
@@ -19,9 +21,14 @@ public class WebSocketServerService
 
     public bool IsRunning { get; private set; }
 
-    public WebSocketServerService(IDbContextFactory<AgentPawDbContext> dbFactory)
+    public WebSocketServerService(
+        IDbContextFactory<AgentPawDbContext> dbFactory,
+        AuthService authService,
+        EncryptionService encryption)
     {
         _dbFactory = dbFactory;
+        _authService = authService;
+        _encryption = encryption;
     }
 
     public void Start()
@@ -143,10 +150,45 @@ public class WebSocketServerService
 
     private async Task<string?> AuthenticateTokenAsync(string token)
     {
+        token = token.Trim();
+        var verified = _authService.VerifyToken(token);
+        if (verified is null)
+            return null;
+
         await using var db = await _dbFactory.CreateDbContextAsync();
-        var authToken = await db.AuthTokens
-            .FirstOrDefaultAsync(t => t.TokenValue == token && t.TokenType == "GOOGLE_SPACE_REFRESH" && !t.IsRevoked);
-        return authToken?.UserId;
+        var candidates = await db.AuthTokens
+            .Where(t =>
+                t.UserId == verified.Value.UserId &&
+                t.TokenType == "APP_SESSION" &&
+                !t.IsRevoked &&
+                (!t.ExpiresAt.HasValue || t.ExpiresAt > DateTimeOffset.UtcNow))
+            .ToListAsync();
+
+        foreach (var candidate in candidates)
+        {
+            string storedToken;
+            try
+            {
+                storedToken = _encryption.Decrypt(candidate.TokenValue);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var storedBytes = Encoding.UTF8.GetBytes(storedToken);
+            var suppliedBytes = Encoding.UTF8.GetBytes(token);
+            if (storedBytes.Length != suppliedBytes.Length)
+                continue;
+
+            if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                storedBytes,
+                suppliedBytes))
+            {
+                return candidate.UserId;
+            }
+        }
+        return null;
     }
 
     public async Task BroadcastNotificationAsync(SpaceNotification notification)

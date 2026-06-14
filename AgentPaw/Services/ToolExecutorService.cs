@@ -23,7 +23,7 @@ public class ToolExecutorService
     }
 
     public async Task<ToolExecutionResult> ExecuteAsync(
-        string workspaceRoot, string toolName, Dictionary<string, object?> args)
+        string workspaceRoot, string toolName, Dictionary<string, object?> args, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(workspaceRoot))
             return Fail("작업 폴더(workspace root)가 설정되어 있지 않다.");
@@ -40,18 +40,22 @@ public class ToolExecutorService
 
             return lower switch
             {
-                "write_file"      => await WriteFileAsync(rootFull, args),
-                "append_file"     => await AppendFileAsync(rootFull, args),
-                "edit_file"       => await EditFileAsync(rootFull, args),
-                "read_file"       => await ReadFileAsync(rootFull, args),
+                "write_file"      => await WriteFileAsync(rootFull, args, ct),
+                "append_file"     => await AppendFileAsync(rootFull, args, ct),
+                "edit_file"       => await EditFileAsync(rootFull, args, ct),
+                "read_file"       => await ReadFileAsync(rootFull, args, ct),
                 "list_dir"        => ListDir(rootFull, args),
                 "search_files"    => SearchFiles(rootFull, args),
                 "delete_file"     => DeleteFile(rootFull, args),
                 "make_dir"        => MakeDir(rootFull, args),
-                "run_command"     => await RunCommandAsync(rootFull, args),
-                "generate_image"  => await GenerateImageAsync(rootFull, args),
+                "run_command"     => await RunCommandAsync(rootFull, args, ct),
+                "generate_image"  => await GenerateImageAsync(rootFull, args, ct),
                 _ => Fail($"알 수 없는 도구: {toolName}")
             };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -59,7 +63,7 @@ public class ToolExecutorService
         }
     }
 
-    private static async Task<ToolExecutionResult> WriteFileAsync(string root, Dictionary<string, object?> args)
+    private static async Task<ToolExecutionResult> WriteFileAsync(string root, Dictionary<string, object?> args, CancellationToken ct)
     {
         var path = RequireString(args, "path");
         var content = GetString(args, "content") ?? string.Empty;
@@ -72,11 +76,11 @@ public class ToolExecutorService
         var dir = Path.GetDirectoryName(full);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-        await File.WriteAllTextAsync(full, content, new System.Text.UTF8Encoding(false));
+        await File.WriteAllTextAsync(full, content, new System.Text.UTF8Encoding(false), ct);
         return Ok($"ok — {RelOf(root, full)} 에 {bytes} bytes 기록");
     }
 
-    private static async Task<ToolExecutionResult> AppendFileAsync(string root, Dictionary<string, object?> args)
+    private static async Task<ToolExecutionResult> AppendFileAsync(string root, Dictionary<string, object?> args, CancellationToken ct)
     {
         var path = RequireString(args, "path");
         var content = GetString(args, "content") ?? string.Empty;
@@ -90,11 +94,11 @@ public class ToolExecutorService
         var dir = Path.GetDirectoryName(full);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-        await File.AppendAllTextAsync(full, content, new System.Text.UTF8Encoding(false));
+        await File.AppendAllTextAsync(full, content, new System.Text.UTF8Encoding(false), ct);
         return Ok($"ok — {RelOf(root, full)} 에 {bytes} bytes 추가");
     }
 
-    private static async Task<ToolExecutionResult> ReadFileAsync(string root, Dictionary<string, object?> args)
+    private static async Task<ToolExecutionResult> ReadFileAsync(string root, Dictionary<string, object?> args, CancellationToken ct)
     {
         var path = RequireString(args, "path");
         var full = ResolveInside(root, path);
@@ -107,7 +111,7 @@ public class ToolExecutorService
             return Fail($"파일이 너무 크다 ({info.Length} bytes)");
 
         // 바이너리 감지 (UTF8로 디코드 실패 또는 NUL 바이트 포함)
-        var bytes = await File.ReadAllBytesAsync(full);
+        var bytes = await File.ReadAllBytesAsync(full, ct);
         if (Array.IndexOf(bytes, (byte)0) >= 0)
             return Fail($"바이너리 파일로 보인다 ({RelOf(root, full)}). 텍스트 파일만 읽을 수 있다.");
 
@@ -179,7 +183,7 @@ public class ToolExecutorService
 
     // edit_file: old_text를 new_text로 정확히 1곳 교체.
     // 0곳이면 미발견 오류, 2곳 이상이면 모호 오류를 반환하여 의도치 않은 다중 치환을 방지한다.
-    private static async Task<ToolExecutionResult> EditFileAsync(string root, Dictionary<string, object?> args)
+    private static async Task<ToolExecutionResult> EditFileAsync(string root, Dictionary<string, object?> args, CancellationToken ct)
     {
         var path    = RequireString(args, "path");
         var oldText = RequireString(args, "old_text");
@@ -193,7 +197,7 @@ public class ToolExecutorService
         if (info.Length > MaxFileBytes)
             return Fail($"파일이 너무 크다 ({info.Length} bytes)");
 
-        var content = await File.ReadAllTextAsync(full, new System.Text.UTF8Encoding(false));
+        var content = await File.ReadAllTextAsync(full, new System.Text.UTF8Encoding(false), ct);
         var count   = CountOccurrences(content, oldText);
 
         if (count == 0)
@@ -203,7 +207,7 @@ public class ToolExecutorService
             return Fail($"old_text가 파일 내 {count}곳에서 발견됐다. 더 많은 주변 컨텍스트를 포함하여 유일하게 특정한다.");
 
         var newContent = content.Replace(oldText, newText, StringComparison.Ordinal);
-        await File.WriteAllTextAsync(full, newContent, new System.Text.UTF8Encoding(false));
+        await File.WriteAllTextAsync(full, newContent, new System.Text.UTF8Encoding(false), ct);
         return Ok($"ok — {RelOf(root, full)} 편집 완료");
     }
 
@@ -253,20 +257,49 @@ public class ToolExecutorService
     }
 
     // run_command: workspaceRoot를 CWD로 하여 셸 명령 실행. 타임아웃 60초.
-    private static async Task<ToolExecutionResult> RunCommandAsync(string root, Dictionary<string, object?> args)
+    private static async Task<ToolExecutionResult> RunCommandAsync(string root, Dictionary<string, object?> args, CancellationToken ct)
     {
         var command = RequireString(args, "command");
 
-        // 명백히 파괴적인 패턴만 차단한다
+        // 위험 패턴 차단 — 파괴적 명령 및 명령 체이닝/파이프를 통한 인젝션 방지
         var norm = command.ToLowerInvariant();
-        string[] blocked = ["rm -rf /", "format c:", "del /f /s /q c:\\", ":(){:|:&};:"];
+        string[] blocked = [
+            "rm -rf /", "format c:", "del /f /s /q c:\\", ":(){:|:&};:",
+            "rm -rf ~", "rd /s /q c:\\", "mkfs", "dd if=", "shutdown",
+            "net user", "net localgroup", "reg add", "reg delete",
+            "certutil -urlcache", "bitsadmin", "powershell -enc",
+            "curl|", "wget|", "invoke-webrequest", "invoke-restmethod",
+            "new-object net.webclient", "downloadstring", "downloadfile",
+            "start-process", "iex(", "iex (", "-nop -w hidden",
+            "attrib +h", "icacls", "takeown"
+        ];
         foreach (var b in blocked)
             if (norm.Contains(b)) return Fail("위험한 패턴이 포함된 명령어다. 실행을 거부했다.");
 
+        // 셸 메타문자를 통한 명령 체이닝 차단 (&&, ||, |, ;, `, $() 등)
+        char[] shellMeta = ['|', ';', '`'];
+        foreach (var c in shellMeta)
+            if (command.Contains(c)) return Fail($"셸 메타문자 '{c}'가 포함된 명령어다. 단일 명령만 허용한다.");
+        if (command.Contains("&&") || command.Contains("||"))
+            return Fail("명령 체이닝(&&, ||)은 허용되지 않는다. 단일 명령만 실행한다.");
+        if (command.Contains("$(") || command.Contains("%"))
+            return Fail("변수 치환·명령 치환 구문이 포함된 명령어다. 실행을 거부했다.");
+
+        var parts = SplitCommandLine(command);
+        if (parts.Count == 0)
+            return Fail("실행할 명령이 비어 있다.");
+
+        var executable = Path.GetFileNameWithoutExtension(parts[0]).ToLowerInvariant();
+        string[] blockedExecutables = [
+            "cmd", "powershell", "pwsh", "wscript", "cscript", "mshta",
+            "reg", "bitsadmin", "certutil", "rundll32"
+        ];
+        if (blockedExecutables.Contains(executable))
+            return Fail($"실행 파일 '{executable}'은 허용되지 않는다.");
+
         var psi = new ProcessStartInfo
         {
-            FileName               = "cmd.exe",
-            Arguments              = "/c " + command,
+            FileName               = parts[0],
             WorkingDirectory       = root,
             UseShellExecute        = false,
             RedirectStandardOutput = true,
@@ -275,6 +308,8 @@ public class ToolExecutorService
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding  = Encoding.UTF8
         };
+        foreach (var arg in parts.Skip(1))
+            psi.ArgumentList.Add(arg);
 
         Process proc;
         try   { proc = Process.Start(psi) ?? throw new InvalidOperationException("프로세스 시작 실패"); }
@@ -282,11 +317,17 @@ public class ToolExecutorService
 
         using (proc)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(60));
             var outTask = proc.StandardOutput.ReadToEndAsync(cts.Token);
             var errTask = proc.StandardError.ReadToEndAsync(cts.Token);
 
             try   { await proc.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                throw;
+            }
             catch (OperationCanceledException)
             {
                 try { proc.Kill(entireProcessTree: true); } catch { }
@@ -315,7 +356,7 @@ public class ToolExecutorService
 
     // generate_image: OpenAI DALL-E 3로 이미지를 생성하여 워크스페이스에 저장.
     // 설정 > API 키에서 OPENAI 키가 등록되어 있어야 한다.
-    private async Task<ToolExecutionResult> GenerateImageAsync(string root, Dictionary<string, object?> args)
+    private async Task<ToolExecutionResult> GenerateImageAsync(string root, Dictionary<string, object?> args, CancellationToken ct)
     {
         var prompt  = RequireString(args, "prompt");
         var path    = RequireString(args, "path");
@@ -349,10 +390,11 @@ public class ToolExecutorService
         httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
         HttpResponseMessage httpResp;
-        try { httpResp = await _httpClient.SendAsync(httpReq); }
+        try { httpResp = await _httpClient.SendAsync(httpReq, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) { return Fail($"OpenAI 요청 실패: {ex.Message}"); }
 
-        var respBody = await httpResp.Content.ReadAsStringAsync();
+        var respBody = await httpResp.Content.ReadAsStringAsync(ct);
         if (!httpResp.IsSuccessStatusCode)
             return Fail($"OpenAI API 오류 ({(int)httpResp.StatusCode}): {respBody}");
 
@@ -373,7 +415,8 @@ public class ToolExecutorService
 
         // 이미지 다운로드
         byte[] imageBytes;
-        try { imageBytes = await _httpClient.GetByteArrayAsync(imageUrl); }
+        try { imageBytes = await _httpClient.GetByteArrayAsync(imageUrl, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) { return Fail($"이미지 다운로드 실패: {ex.Message}"); }
 
         if (imageBytes.Length > MaxFileBytes)
@@ -381,7 +424,7 @@ public class ToolExecutorService
 
         var dir = Path.GetDirectoryName(full);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        await File.WriteAllBytesAsync(full, imageBytes);
+        await File.WriteAllBytesAsync(full, imageBytes, ct);
 
         var note = string.IsNullOrWhiteSpace(revisedPrompt) ? string.Empty : $"\nRevised prompt: {revisedPrompt}";
         return Ok($"ok — {RelOf(root, full)} 에 {imageBytes.Length} bytes 저장 ({size}, {quality}){note}");
@@ -397,6 +440,37 @@ public class ToolExecutorService
             idx += pattern.Length;
         }
         return count;
+    }
+
+    private static List<string> SplitCommandLine(string command)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < command.Length; i++)
+        {
+            var ch = command[i];
+            if (ch == '"')
+            {
+                inQuotes = !inQuotes;
+                continue;
+            }
+            if (char.IsWhiteSpace(ch) && !inQuotes)
+            {
+                if (current.Length > 0)
+                {
+                    result.Add(current.ToString());
+                    current.Clear();
+                }
+                continue;
+            }
+            current.Append(ch);
+        }
+        if (inQuotes)
+            throw new ArgumentException("따옴표가 닫히지 않은 명령어다.");
+        if (current.Length > 0)
+            result.Add(current.ToString());
+        return result;
     }
 
     private static string ResolveInside(string rootFull, string relative)

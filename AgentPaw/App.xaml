@@ -85,7 +85,7 @@
             <SolidColorBrush x:Key="PawStatusDotIdle" Color="{StaticResource PawArchiveSubTextColor}" />
 
             <!-- ─── Typography ─── -->
-            <FontFamily x:Key="PawFont">Pretendard, Malgun Gothic, Segoe UI</FontFamily>
+            <FontFamily x:Key="PawFont">Pretendard Variable, Pretendard, Apple SD Gothic Neo, Malgun Gothic, Noto Sans KR, sans-serif</FontFamily>
 
             <!-- ═══════════════════════════════════════════════════════
                  Paper Texture System

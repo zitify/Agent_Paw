@@ -56,7 +56,7 @@ public class OrchestratorService
         if (input.TeamPersonaIds?.Count >= 2)
             return await RunTeamPipelineAsync(input, progress, ct);
 
-        var personas = await _configLoader.ListPersonasAsync(input.ProjectId);
+        var personas = await _configLoader.ListPersonasAsync(input.ProjectId, ct);
         if (personas.Count == 0)
             throw new InvalidOperationException("프로젝트에 페르소나가 없습니다.");
 
@@ -106,7 +106,7 @@ public class OrchestratorService
         for (int iter = 0; iter < MaxIterations; iter++)
         {
             iterationsUsed = iter + 1;
-            var config = await _configLoader.GetPersonaConfigAsync(currentPersonaId, input.ProjectId);
+            var config = await _configLoader.GetPersonaConfigAsync(currentPersonaId, input.ProjectId, ct);
             var isCurrentPm = pmPersona != null && config.PersonaId == pmPersona.PersonaId;
 
             var isDevRequest = DetectDevIntent(input.Message);
@@ -119,7 +119,7 @@ public class OrchestratorService
             if (iter == 0)
             {
                 userPrompt = await _contextInjector.InjectAsync(
-                    currentRequest, input.ProjectId, config.Name, classification.Confidence);
+                    currentRequest, input.ProjectId, config.Name, classification.Confidence, ct);
             }
             else if (pendingToolFeedback != null)
             {
@@ -212,7 +212,7 @@ public class OrchestratorService
                 try
                 {
                     await _wiki.CreateWikiAsync(
-                        input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: turnEventId);
+                        input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: turnEventId, ct: ct);
                 }
                 catch (Exception ex)
                 {
@@ -228,7 +228,7 @@ public class OrchestratorService
             {
                 foreach (var call in toolParse.Calls)
                 {
-                    var exec = await _toolExecutor.ExecuteAsync(workspaceRoot, call.Name, call.Args);
+                    var exec = await _toolExecutor.ExecuteAsync(workspaceRoot, call.Name, call.Args, ct);
                     toolRecords.Add(new ToolCallRecord
                     {
                         Name = call.Name,
@@ -365,7 +365,8 @@ public class OrchestratorService
                         input, personas, pmPersona, askUserEnabled,
                         discussionOpen.Topic, discussionOpen.StanceHint,
                         validated, rounds, history, progress, runId,
-                        maxParticipants: maxDiscussionParticipants);
+                        maxParticipants: maxDiscussionParticipants,
+                        ct: ct);
                     pendingDiscussionFeedback = transcript;
                     currentPersonaId = pmPersona.PersonaId;
                     fromPersonaLabel = "다자 토론";
@@ -453,7 +454,7 @@ public class OrchestratorService
             }
         }
 
-        var eventId = await LogEventsAsync(input, history, runId, endReport, userIntervention, outputsFolder, commitSha, reportPath);
+        var eventId = await LogEventsAsync(input, history, runId, endReport, userIntervention, outputsFolder, commitSha, reportPath, ct);
 
         return new OrchestratorOutput
         {
@@ -526,14 +527,16 @@ public class OrchestratorService
         // 각 참여자가 마지막으로 발언한 턴 인덱스 (-1 = 미발언)
         var lastSpoke = participants.ToDictionary(p => p.PersonaId, _ => -1);
         var currentSpeaker = participants[0];
-        // 조기 종료용 슬라이딩 윈도우 — 참여자 수만큼 최근 stance 추적
-        var stanceWindow = new Queue<string>();
+        // 조기 종료는 참여자별 최신 stance가 모두 agree일 때만 허용한다.
+        var latestStance = new Dictionary<string, string>();
+        string? repeatedSelfSpeakerId = null;
+        int repeatedSelfSpeakerCount = 0;
 
         for (int turn = 0; turn < maxTurns; turn++)
         {
             var speaker = currentSpeaker;
             var roundIndex = turn / participants.Count;
-            var config = await _configLoader.GetPersonaConfigAsync(speaker.PersonaId, input.ProjectId);
+            var config = await _configLoader.GetPersonaConfigAsync(speaker.PersonaId, input.ProjectId, ct);
             var addendum = BuildDiscussionSpeakerAddendum(
                 topic, stanceHint, participants, config.Name, roundIndex, rounds, isFreeMode);
             var systemPrompt = string.IsNullOrWhiteSpace(addendum)
@@ -605,7 +608,7 @@ public class OrchestratorService
                 try
                 {
                     await _wiki.CreateWikiAsync(
-                        input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: dEventId);
+                        input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: dEventId, ct: ct);
                 }
                 catch (Exception ex)
                 {
@@ -640,10 +643,9 @@ public class OrchestratorService
             progress?.Report(agentTurn);
             lastSpoke[speaker.PersonaId] = turn;
 
-            // 슬라이딩 윈도우 조기 종료: 최근 N 발언이 모두 agree면 합의 완료
-            stanceWindow.Enqueue(agentTurn.Stance!);
-            if (stanceWindow.Count > participants.Count) stanceWindow.Dequeue();
-            if (stanceWindow.Count == participants.Count && stanceWindow.All(s => s == "agree"))
+            // 참여자 전원이 최소 1회 발언했고, 각자의 최신 stance가 모두 agree면 합의 완료
+            latestStance[speaker.PersonaId] = agentTurn.Stance!;
+            if (participants.All(p => latestStance.TryGetValue(p.PersonaId, out var s) && s == "agree"))
                 break;
 
             // 다음 화자 결정: 현재 화자가 next_speaker 지명 → 없으면 가장 오래 발언 안 한 참여자
@@ -653,6 +655,25 @@ public class OrchestratorService
                 next = participants.FirstOrDefault(p =>
                     string.Equals(p.Name, stance.NextSpeaker, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(p.Label, stance.NextSpeaker, StringComparison.OrdinalIgnoreCase));
+                if (next?.PersonaId == speaker.PersonaId)
+                {
+                    repeatedSelfSpeakerCount = repeatedSelfSpeakerId == speaker.PersonaId
+                        ? repeatedSelfSpeakerCount + 1
+                        : 1;
+                    repeatedSelfSpeakerId = speaker.PersonaId;
+                    if (repeatedSelfSpeakerCount >= 2)
+                        next = null;
+                }
+                else
+                {
+                    repeatedSelfSpeakerId = null;
+                    repeatedSelfSpeakerCount = 0;
+                }
+            }
+            else
+            {
+                repeatedSelfSpeakerId = null;
+                repeatedSelfSpeakerCount = 0;
             }
             if (next == null)
                 next = participants.OrderBy(p => lastSpoke[p.PersonaId]).First();
@@ -804,7 +825,7 @@ public class OrchestratorService
             ct: ct);
 
         // Phase 2: PM 한 번 — 취합만
-        var pmConfig = await _configLoader.GetPersonaConfigAsync(pmPersona.PersonaId, input.ProjectId);
+        var pmConfig = await _configLoader.GetPersonaConfigAsync(pmPersona.PersonaId, input.ProjectId, ct);
         var pmSystemPrompt = pmConfig.SystemPrompt + "\n\n" + BuildPmAggregateAddendum();
         var pmUserPrompt = BuildPmAggregatePrompt(input.Message, transcript);
 
@@ -852,7 +873,7 @@ public class OrchestratorService
 
         foreach (var block in wikiParse.Saves)
         {
-            try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: pmEventId); }
+            try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: pmEventId, ct: ct); }
             catch (Exception ex) { Console.Error.WriteLine($"[WikiSave] FAILED: {ex.GetType().Name}: {ex.Message}"); }
         }
 
@@ -908,7 +929,7 @@ public class OrchestratorService
             catch { }
         }
 
-        var eventId = await LogEventsAsync(input, history, runId, endReport, false, outputsFolder, commitSha, reportPath);
+        var eventId = await LogEventsAsync(input, history, runId, endReport, false, outputsFolder, commitSha, reportPath, ct);
 
         return new OrchestratorOutput
         {
@@ -958,7 +979,7 @@ public class OrchestratorService
         IProgress<AgentTurn>? progress,
         CancellationToken ct = default)
     {
-        var allPersonas = await _configLoader.ListPersonasAsync(input.ProjectId);
+        var allPersonas = await _configLoader.ListPersonasAsync(input.ProjectId, ct);
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
         var askUserEnabled = await ResolveAskUserEnabledAsync(input);
         var runId = Guid.NewGuid().ToString("N")[..8];
@@ -1000,7 +1021,7 @@ public class OrchestratorService
         if (history.Count == 0)
             throw new InvalidOperationException("팀 파이프라인이 응답을 생성하지 못했습니다.");
 
-        var eventId = await LogEventsAsync(input, history, runId, false, false, null, null, null);
+        var eventId = await LogEventsAsync(input, history, runId, false, false, null, null, null, ct);
         var lastTurn = history[^1];
 
         return new OrchestratorOutput
@@ -1029,7 +1050,7 @@ public class OrchestratorService
         for (int i = 0; i < teamPersonas.Count; i++)
         {
             var persona = teamPersonas[i];
-            var config = await _configLoader.GetPersonaConfigAsync(persona.PersonaId, input.ProjectId);
+            var config = await _configLoader.GetPersonaConfigAsync(persona.PersonaId, input.ProjectId, ct);
             var streamKey = $"{runId}-panel-{i}";
 
             var addendum = BuildTeamModeAddendum(teamPersonas, config.Name, workspaceRoot, "panel");
@@ -1038,7 +1059,7 @@ public class OrchestratorService
                 : config.SystemPrompt + "\n\n" + addendum;
 
             var userPrompt = await _contextInjector.InjectAsync(
-                input.Message, input.ProjectId, config.Name, 1.0);
+                input.Message, input.ProjectId, config.Name, 1.0, ct);
 
             var streamBuffer = new StringBuilder();
             long lastEmitTicks = 0L;
@@ -1079,7 +1100,7 @@ public class OrchestratorService
             var content = wikiParse.CleanedContent;
             foreach (var block in wikiParse.Saves)
             {
-                try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: eventId); }
+                try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: eventId, ct: ct); }
                 catch { }
             }
 
@@ -1113,7 +1134,7 @@ public class OrchestratorService
         for (int i = 0; i < teamPersonas.Count; i++)
         {
             var persona = teamPersonas[i];
-            var config = await _configLoader.GetPersonaConfigAsync(persona.PersonaId, input.ProjectId);
+            var config = await _configLoader.GetPersonaConfigAsync(persona.PersonaId, input.ProjectId, ct);
             var streamKey = $"{runId}-chain-{i}";
 
             var addendum = BuildTeamModeAddendum(teamPersonas, config.Name, workspaceRoot, "chain");
@@ -1122,7 +1143,7 @@ public class OrchestratorService
                 : config.SystemPrompt + "\n\n" + addendum;
 
             var userPrompt = i == 0
-                ? await _contextInjector.InjectAsync(input.Message, input.ProjectId, config.Name, 1.0)
+                ? await _contextInjector.InjectAsync(input.Message, input.ProjectId, config.Name, 1.0, ct)
                 : BuildChainContextPrompt(input.Message, history, config.Label, i);
 
             var streamBuffer = new StringBuilder();
@@ -1164,7 +1185,7 @@ public class OrchestratorService
             var content = wikiParse.CleanedContent;
             foreach (var block in wikiParse.Saves)
             {
-                try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: eventId); }
+                try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: eventId, ct: ct); }
                 catch { }
             }
 
@@ -1682,9 +1703,10 @@ public class OrchestratorService
         bool userIntervention,
         string? outputsFolder,
         string? commitSha,
-        string? reportPath = null)
+        string? reportPath = null,
+        CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         var userEventId = Guid.NewGuid().ToString();
         db.EventLogs.Add(new EventLog
@@ -1769,7 +1791,7 @@ public class OrchestratorService
             lastEventId = pmEventId;
         }
 
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
         return lastEventId;
     }
 
@@ -1778,7 +1800,7 @@ public class OrchestratorService
         IReadOnlyList<ConversationTurn> prior,
         CancellationToken ct = default)
     {
-        var config = await _configLoader.GetPersonaConfigAsync(personaId, projectId);
+        var config = await _configLoader.GetPersonaConfigAsync(personaId, projectId, ct);
 
         var sb = new System.Text.StringBuilder();
         foreach (var t in prior)

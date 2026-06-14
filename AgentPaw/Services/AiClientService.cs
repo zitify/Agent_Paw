@@ -99,6 +99,10 @@ public class AiClientService
             {
                 return await ChatWithModelStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 errors.Add($"{model}: {ex.Message}");
@@ -143,8 +147,10 @@ public class AiClientService
             {
                 try
                 {
+                    ct.ThrowIfCancellationRequested();
                     var cliMsg = FormatHistoryAsText(userMessage, history);
                     var content = await _claudeCliService.CallAsync(systemPrompt, cliMsg).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
                     onDelta?.Invoke(content);
                     return new AiResponse
                     {
@@ -152,6 +158,10 @@ public class AiClientService
                         ModelUsed = $"{model} (CLI)",
                         Provider = "CLAUDE_CLI"
                     };
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch
                 {
@@ -317,12 +327,15 @@ public class AiClientService
         };
 
         var json = JsonSerializer.Serialize(request);
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{resolvedModel}:streamGenerateContent?alt=sse&key={apiKey}";
+        // API 키를 URL 쿼리스트링 대신 x-goog-api-key 헤더로 전송한다.
+        // URL에 키를 포함하면 프록시 로그·브라우저 히스토리 등에 노출될 수 있다.
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{resolvedModel}:streamGenerateContent?alt=sse";
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+        httpRequest.Headers.Add("x-goog-api-key", apiKey);
 
         var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
 

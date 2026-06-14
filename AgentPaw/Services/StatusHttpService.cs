@@ -22,6 +22,9 @@ public class StatusHttpService
     private CancellationTokenSource? _cts;
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
 
+    // 로컬호스트 전용 바인딩이므로 인증을 생략하되, /api/status는 간략 정보만 노출한다.
+    // 감사 로그·이벤트 로그 상세는 인증 없는 엔드포인트에서 제거한다.
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -407,9 +410,10 @@ public class StatusHttpService
             </div>`;
           }
 
+          function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
           function actionTag(action) {
             const map = { LOGIN:'tag-login', LOGOUT:'tag-logout', DEV_BYPASS_LOGIN:'tag-dev', SESSION_FORCE_REVOKE:'tag-revoke' };
-            return `<span class="tag ${map[action]||'tag-default'}">${action}</span>`;
+            return `<span class="tag ${map[action]||'tag-default'}">${esc(action)}</span>`;
           }
 
           async function refresh() {
@@ -449,8 +453,8 @@ public class StatusHttpService
               eb.innerHTML = d.recentEvents.length
                 ? d.recentEvents.map(e =>
                     `<tr>
-                      <td class="evt-type">${e.eventType}</td>
-                      <td class="t-dim">${e.projectId ? e.projectId.slice(0,8)+'…' : '—'}</td>
+                      <td class="evt-type">${esc(e.eventType)}</td>
+                      <td class="t-dim">${e.projectId ? esc(e.projectId.slice(0,8))+'…' : '—'}</td>
                       <td class="t-ago">${ago(e.createdAt)}</td>
                     </tr>`
                   ).join('')

@@ -27,6 +27,26 @@ public class MobileApiService
     private readonly string _devUserId;
 
     private const int Port = 47893;
+    private const int MaxRequestsPerMinute = 60;
+    private static int _requestCount;
+    private static DateTime _windowStart = DateTime.UtcNow;
+    private static readonly object _rateLock = new();
+
+    private static bool IsRateLimited()
+    {
+        lock (_rateLock)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _windowStart).TotalSeconds >= 60)
+            {
+                _windowStart = now;
+                _requestCount = 0;
+            }
+            _requestCount++;
+            return _requestCount > MaxRequestsPerMinute;
+        }
+    }
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -34,7 +54,7 @@ public class MobileApiService
     };
     private static readonly Dictionary<string, string> CorsHeaders = new()
     {
-        ["Access-Control-Allow-Origin"] = "*",
+        ["Access-Control-Allow-Origin"] = "http://localhost:3000",
         ["Access-Control-Allow-Headers"] = "Authorization, Content-Type",
         ["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     };
@@ -64,10 +84,11 @@ public class MobileApiService
             return;
         }
 
-        var listener = new TcpListener(IPAddress.Any, Port);
+        // 보안: IPAddress.Any 대신 Loopback 바인딩으로 외부 네트워크 노출을 차단한다.
+        // 모바일 앱 연동 시에는 SSH 터널 또는 역방향 프록시를 사용한다.
+        var listener = new TcpListener(IPAddress.Loopback, Port);
         listener.Start();
-        Console.WriteLine($"[MobileApi] 포트 {Port} 에서 수신 중 (DevUserId={_devUserId})");
-        Console.WriteLine($"[MobileApi] 방화벽 미설정 시: netsh advfirewall firewall add rule name=\"AgentPaw MobileAPI\" dir=in action=allow protocol=TCP localport={Port}");
+        Console.WriteLine($"[MobileApi] 포트 {Port} 에서 수신 중 (localhost only, DevUserId={_devUserId})");
 
         using var reg = ct.Register(() => { try { listener.Stop(); } catch { } });
 
@@ -140,10 +161,13 @@ public class MobileApiService
                     headers[lines[j][..ci].Trim()] = lines[j][(ci + 1)..].Trim();
                 }
 
+                const int MaxBodySize = 1_048_576; // 1MB
                 byte[] body = [];
                 if (headers.TryGetValue("Content-Length", out var clStr)
                     && int.TryParse(clStr, out var cl) && cl > 0)
                 {
+                    if (cl > MaxBodySize) return null;
+
                     body = new byte[cl];
                     var copyLen = Math.Min(extra.Length, cl);
                     Array.Copy(extra, body, copyLen);
@@ -159,6 +183,7 @@ public class MobileApiService
                 return new HttpReq(method, path, qs, headers, body);
             }
 
+            // 헤더 크기 상한: 64KB. Content-Length 상한: 1MB (본문 포함).
             if (received.Count > 65_536) return null;
         }
     }
@@ -180,6 +205,12 @@ public class MobileApiService
         if (req.Method == "OPTIONS")
         {
             await WriteResponseAsync(stream, 204, null, CorsHeaders);
+            return;
+        }
+
+        if (IsRateLimited())
+        {
+            await WriteJsonAsync(stream, 429, new { error = "Too many requests" });
             return;
         }
 
@@ -246,7 +277,8 @@ public class MobileApiService
         }
         catch (Exception ex)
         {
-            try { await WriteJsonAsync(stream, 500, new { error = ex.Message }); } catch { }
+            Console.Error.WriteLine($"[MobileApi] Error: {ex}");
+            try { await WriteJsonAsync(stream, 500, new { error = "Internal server error" }); } catch { }
         }
     }
 

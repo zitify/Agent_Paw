@@ -1,8 +1,8 @@
-# Agent Paw 디자인 시스템
+﻿# Agent Paw 디자인 시스템
 
 | 항목 | 내용 |
 |---|---|
-| 문서 버전 | v0.1.0 |
+| 문서 버전 | v0.1.1 |
 | 작성일 | 2026-04-15 |
 | 작성자 | 안승준 |
 | 적용 범위 | AgentPaw WPF 클라이언트 (.NET 10 + WPF UI) |
@@ -72,7 +72,7 @@
 
 ## 3.1. 폰트 패밀리
 
-. PawFont : `Pretendard, Malgun Gothic, Segoe UI` 폴백 체인.
+. PawFont : `Pretendard Variable, Pretendard, Apple SD Gothic Neo, Malgun Gothic, Noto Sans KR, sans-serif` 폴백 체인. Pretendard Variable 단일 표준(한글·영문·숫자 통합)을 1순위로 적용한다. Inter·SF Pro·Roboto·Segoe UI 분리 사용을 금지한다(본문/UI 텍스트 영역). 단, OS UI Chrome 영역(WPF 시스템 chrome) 은 시스템 폰트 허용, 모노스페이스는 JetBrains Mono 사용한다.
 . 모든 TextBlock·TextBox·Button에 `FontFamily="{StaticResource PawFont}"` 적용을 강제한다.
 
 ## 3.2. 사이즈 체계
@@ -312,4 +312,5 @@ UI 분기 로직은 ViewModel·Code-behind가 아닌 Converter로 처리한다.
 
 | 버전 | 날짜 | 변경 내용 |
 |---|---|---|
+| v0.1.1 | 2026-06-05 | §3.1 PawFont 폴백 체인 확장 — Pretendard Variable 단일 표준 1순위 + Apple SD Gothic Neo·Noto Sans KR 추가, Segoe UI 분리 사용 금지 명시 (ContextBuilder Build/Context/Design/토큰/타이포그래피.md v1.2.0 정합) |
 | v0.1.0 | 2026-04-15 | 최초 작성. §2 컬러 토큰, §3 타이포그래피, §4 종이 텍스처, §5 카드 스타일, §6 컴포넌트(아바타·ProgressRing·Z-Index·ESC·빈 상태·Placeholder·버튼 순서·페르소나 연결), §7 아이콘, §8 페르소나 컬러, §9 컨버터, §10 레이아웃 그리드 |

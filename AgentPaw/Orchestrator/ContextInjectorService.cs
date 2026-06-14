@@ -22,7 +22,7 @@ public class ContextInjectorService
     /// 첫 턴 프롬프트에 라우팅 메타데이터를 얹은 뒤, 관련 위키 문서를 요약 주입한다.
     /// 사용자 질의 토큰과 제목·본문 겹침이 큰 순 → 최신 순으로 정렬한 상위 8건만 포함한다.
     /// </summary>
-    public async Task<string> InjectAsync(string userMessage, string projectId, string personaName, double confidence)
+    public async Task<string> InjectAsync(string userMessage, string projectId, string personaName, double confidence, CancellationToken ct = default)
     {
         var routingNote = confidence < 0.7
             ? """
@@ -43,18 +43,18 @@ public class ContextInjectorService
             {userMessage}
             """;
 
-        var wikiSection = await BuildWikiSectionAsync(projectId, userMessage);
+        var wikiSection = await BuildWikiSectionAsync(projectId, userMessage, ct);
         if (string.IsNullOrEmpty(wikiSection)) return baseText;
 
         return baseText + "\n\n" + wikiSection;
     }
 
-    private async Task<string> BuildWikiSectionAsync(string projectId, string userMessage)
+    private async Task<string> BuildWikiSectionAsync(string projectId, string userMessage, CancellationToken ct)
     {
         List<WikiDocument> wikis;
         try
         {
-            wikis = await _wiki.ListWikisAsync(projectId);
+            wikis = await _wiki.ListWikisAsync(projectId, ct);
         }
         catch
         {

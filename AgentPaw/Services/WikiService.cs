@@ -13,14 +13,14 @@ public class WikiService
         _dbFactory = dbFactory;
     }
 
-    public async Task<List<WikiDocument>> ListWikisAsync(string projectId)
+    public async Task<List<WikiDocument>> ListWikisAsync(string projectId, CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.WikiDocuments
             .Where(w => w.ProjectId == projectId)
             .OrderBy(w => w.SortOrder)
             .ThenBy(w => w.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 
     public async Task<WikiDocument?> GetWikiAsync(string wikiId)
@@ -29,15 +29,15 @@ public class WikiService
         return await db.WikiDocuments.FindAsync(wikiId);
     }
 
-    public async Task<WikiDocument> CreateWikiAsync(string projectId, string category, string title, string content, string? sourceEventId = null, string? parentId = null)
+    public async Task<WikiDocument> CreateWikiAsync(string projectId, string category, string title, string content, string? sourceEventId = null, string? parentId = null, CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         var maxSort = 0;
-        if (await db.WikiDocuments.AnyAsync(w => w.ProjectId == projectId && w.ParentId == parentId))
+        if (await db.WikiDocuments.AnyAsync(w => w.ProjectId == projectId && w.ParentId == parentId, ct))
             maxSort = await db.WikiDocuments
                 .Where(w => w.ProjectId == projectId && w.ParentId == parentId)
-                .MaxAsync(w => w.SortOrder);
+                .MaxAsync(w => w.SortOrder, ct);
 
         var wiki = new WikiDocument
         {
@@ -55,7 +55,7 @@ public class WikiService
         };
 
         db.WikiDocuments.Add(wiki);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
         return wiki;
     }
 

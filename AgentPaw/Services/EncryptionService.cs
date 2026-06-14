@@ -1,3 +1,4 @@
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Org.BouncyCastle.Crypto.Engines;
@@ -19,10 +20,24 @@ public class EncryptionService
 
     public EncryptionService()
     {
-        var hostname = Environment.MachineName;
-        var username = Environment.UserName;
-        var seed = $"agent-paw-{hostname}-{username}-encryption-key-v1";
-        _key = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
+        // 머신별 고유 키를 파일에서 로드하거나 최초 1회 생성한다.
+        // 이전 방식(hostname+username 기반 결정론적 키)은 예측 가능하므로 랜덤 키로 교체한다.
+        // 기존 데이터 호환을 위해 키 파일이 없으면 레거시 키로 폴백한다.
+        var dataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AgentPaw", "data");
+        Directory.CreateDirectory(dataDir);
+        var keyPath = Path.Combine(dataDir, ".encryption_key");
+
+        if (File.Exists(keyPath))
+        {
+            _key = Convert.FromHexString(File.ReadAllText(keyPath).Trim());
+        }
+        else
+        {
+            _key = RandomNumberGenerator.GetBytes(32);
+            File.WriteAllText(keyPath, Convert.ToHexString(_key).ToLower());
+        }
     }
 
     public string Encrypt(string plaintext)
