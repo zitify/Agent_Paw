@@ -25,8 +25,9 @@ public class ClaudeCliService
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
-                FileName = "claude",
-                Arguments = "--version",
+                // npm 셸심(claude.cmd)은 cmd.exe를 통해 실행해야 한다 (Windows)
+                FileName = "cmd.exe",
+                Arguments = "/c claude --version",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -63,8 +64,9 @@ public class ClaudeCliService
         var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = "claude",
-            Arguments = "-p --output-format text",
+            // npm 셸심(claude.cmd)은 cmd.exe를 통해 실행해야 한다 (Windows)
+            FileName = "cmd.exe",
+            Arguments = "/c claude -p --output-format text",
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
