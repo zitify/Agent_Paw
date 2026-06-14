@@ -11,6 +11,7 @@ public class AiClientService
 {
     private readonly ApiKeyService _apiKeyService;
     private readonly ClaudeCliService _claudeCliService;
+    private readonly CodexCliService _codexCliService;
     private readonly HttpClient _httpClient;
 
     private static readonly Dictionary<string, string> ClaudeModelMap = new()
@@ -33,10 +34,11 @@ public class AiClientService
         ["gemini-2.0-flash"] = "gemini-2.5-flash"
     };
 
-    public AiClientService(ApiKeyService apiKeyService, ClaudeCliService claudeCliService, IHttpClientFactory httpClientFactory)
+    public AiClientService(ApiKeyService apiKeyService, ClaudeCliService claudeCliService, CodexCliService codexCliService, IHttpClientFactory httpClientFactory)
     {
         _apiKeyService = apiKeyService;
         _claudeCliService = claudeCliService;
+        _codexCliService = codexCliService;
         _httpClient = httpClientFactory.CreateClient();
     }
 
@@ -170,6 +172,37 @@ public class AiClientService
                         return await CallClaudeStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
 
                     throw new InvalidOperationException("CLAUDE_CLI_FAILED: Claude Code CLI 호출 실패. API 키도 설정되지 않았습니다.");
+                }
+            }
+
+            // Claude CLI 비활성 → Codex CLI 시도 (API 키 없이 Claude 모델 대리 실행)
+            if (await _codexCliService.IsEnabledAsync().ConfigureAwait(false))
+            {
+                try
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var cliMsg = FormatHistoryAsText(userMessage, history);
+                    var content = await _codexCliService.CallAsync(systemPrompt, cliMsg).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
+                    onDelta?.Invoke(content);
+                    return new AiResponse
+                    {
+                        Content = content,
+                        ModelUsed = $"{model} (Codex CLI)",
+                        Provider = "CODEX_CLI"
+                    };
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Codex CLI 실패 → API Key가 있으면 fallback
+                    if (await _apiKeyService.HasApiKeyAsync("CLAUDE").ConfigureAwait(false))
+                        return await CallClaudeStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
+
+                    throw new InvalidOperationException("CODEX_CLI_FAILED: Codex CLI 호출 실패. API 키도 설정되지 않았습니다.");
                 }
             }
 

@@ -49,6 +49,25 @@ public partial class LlmSettingsPage : UserControl
         ClaudeCliToggleButton.Content = _vm.ClaudeCliEnabled ? "비활성화" : "활성화";
         ClaudeCliToggleButton.IsEnabled = _vm.ClaudeCliAvailable;
 
+        // Codex CLI
+        if (_vm.CodexCliAvailable && _vm.CodexCliEnabled)
+        {
+            CodexCliStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
+            CodexCliStatusText.Text = "사용 가능 · 활성";
+        }
+        else if (_vm.CodexCliAvailable)
+        {
+            CodexCliStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 152, 0));
+            CodexCliStatusText.Text = "사용 가능 · 비활성";
+        }
+        else
+        {
+            CodexCliStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(136, 136, 136));
+            CodexCliStatusText.Text = "CLI 미설치 (codex 명령어 없음)";
+        }
+        CodexCliToggleButton.Content = _vm.CodexCliEnabled ? "비활성화" : "활성화";
+        CodexCliToggleButton.IsEnabled = _vm.CodexCliAvailable;
+
         // AI Engine API Keys
         if (_vm.HasClaudeKey)
         {
@@ -100,6 +119,22 @@ public partial class LlmSettingsPage : UserControl
     }
 
     private async void TestClaudeCli_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        await _vm.LoadCommand.ExecuteAsync(null);
+        UpdateUI();
+    }
+
+    // === Codex CLI ===
+
+    private async void ToggleCodexCli_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        await _vm.ToggleCodexCliCommand.ExecuteAsync(null);
+        UpdateUI();
+    }
+
+    private async void TestCodexCli_Click(object sender, RoutedEventArgs e)
     {
         if (_vm == null) return;
         await _vm.LoadCommand.ExecuteAsync(null);

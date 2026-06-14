@@ -83,10 +83,11 @@ public partial class App : Application
                 services.AddSingleton<TelegramChatService>();
                 services.AddSingleton<TelegramPollingService>();
 
-                // Phase 6: Instructions + Claude CLI
+                // Phase 6: Instructions + Claude CLI + Codex CLI
                 services.AddSingleton<InstructionService>();
                 services.AddSingleton<PersonaService>();
                 services.AddSingleton<ClaudeCliService>();
+                services.AddSingleton<CodexCliService>();
 
                 // Dev Agent
                 services.AddSingleton<DevAgentService>();
@@ -227,48 +228,59 @@ public partial class App : Application
         }
         catch { /* 이미 존재하면 무시 */ }
 
-        // 전역 페르소나 빌트인 템플릿 시드 — 시드 버전이 바뀌면 재시드한다
+        // 페르소나 시드 + 메인 창 기동 + 백그라운드 서비스. 예외 시 사용자에게 알리고 종료한다.
         try
         {
-            var personaService = _host.Services.GetRequiredService<PersonaService>();
-            await personaService.EnsureSeedAsync();
+            // 전역 페르소나 빌트인 템플릿 시드 — 시드 버전이 바뀌면 재시드한다
+            try
+            {
+                var personaService = _host.Services.GetRequiredService<PersonaService>();
+                await personaService.EnsureSeedAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[PersonaSeed] FAILED: {ex.GetType().Name}: {ex.Message}");
+                if (ex.InnerException != null)
+                    Console.Error.WriteLine($"[PersonaSeed]   inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+                Console.Error.WriteLine($"[PersonaSeed] stack: {ex.StackTrace}");
+            }
+
+            var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+            mainWindow.Show();
+            MainWindow = mainWindow;
+
+            // 외부 채팅/소켓 서비스는 네트워크 I/O를 수반해 첫 창 표시를 지연시킨다 —
+            // 창을 먼저 띄우고 백그라운드에서 병렬 기동한다. 실패해도 UI는 계속 동작한다.
+            _ = Task.Run(async () =>
+            {
+                var services = _host.Services;
+                var startups = new[]
+                {
+                    SafeStartAsync(() => services.GetRequiredService<PubSubPullService>().StartAsync()),
+                    SafeStartAsync(() => services.GetRequiredService<SlackSocketModeService>().StartAsync()),
+                    SafeStartAsync(() => services.GetRequiredService<TelegramPollingService>().StartAsync()),
+                    SafeStartAsync(() =>
+                    {
+                        services.GetRequiredService<WebSocketServerService>().Start();
+                        return Task.CompletedTask;
+                    }),
+                    SafeStartAsync(() =>
+                    {
+                        services.GetRequiredService<StatusHttpService>().Start();
+                        return Task.CompletedTask;
+                    }),
+                    SafeStartAsync(() => services.GetRequiredService<MobileApiService>().StartAsync())
+                };
+                await Task.WhenAll(startups);
+            });
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[PersonaSeed] FAILED: {ex.GetType().Name}: {ex.Message}");
-            if (ex.InnerException != null)
-                Console.Error.WriteLine($"[PersonaSeed]   inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
-            Console.Error.WriteLine($"[PersonaSeed] stack: {ex.StackTrace}");
+            System.Windows.MessageBox.Show(
+                $"앱 시작 중 오류가 발생했습니다:\n\n{ex.Message}",
+                "Agent Paw", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
         }
-
-        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
-        mainWindow.Show();
-        MainWindow = mainWindow;
-
-        // 외부 채팅/소켓 서비스는 네트워크 I/O를 수반해 첫 창 표시를 지연시킨다 —
-        // 창을 먼저 띄우고 백그라운드에서 병렬 기동한다. 실패해도 UI는 계속 동작한다.
-        _ = Task.Run(async () =>
-        {
-            var services = _host.Services;
-            var startups = new[]
-            {
-                SafeStartAsync(() => services.GetRequiredService<PubSubPullService>().StartAsync()),
-                SafeStartAsync(() => services.GetRequiredService<SlackSocketModeService>().StartAsync()),
-                SafeStartAsync(() => services.GetRequiredService<TelegramPollingService>().StartAsync()),
-                SafeStartAsync(() =>
-                {
-                    services.GetRequiredService<WebSocketServerService>().Start();
-                    return Task.CompletedTask;
-                }),
-                SafeStartAsync(() =>
-                {
-                    services.GetRequiredService<StatusHttpService>().Start();
-                    return Task.CompletedTask;
-                }),
-                SafeStartAsync(() => services.GetRequiredService<MobileApiService>().StartAsync())
-            };
-            await Task.WhenAll(startups);
-        });
     }
 
     private static async Task SafeStartAsync(Func<Task> start)

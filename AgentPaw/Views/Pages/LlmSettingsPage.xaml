@@ -94,6 +94,40 @@
                 </StackPanel>
             </Border>
 
+            <!-- Codex CLI -->
+            <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,8">
+                        <TextBlock Text="Codex CLI" FontSize="16" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource PawFont}" Foreground="{DynamicResource PawTextPrimary}" />
+                        <ui:Button x:Name="CodexCliToggleButton" Content="활성화"
+                                   DockPanel.Dock="Right" Appearance="Secondary"
+                                   FontFamily="{StaticResource PawFont}" HorizontalAlignment="Right"
+                                   Click="ToggleCodexCli_Click" />
+                    </DockPanel>
+
+                    <TextBlock Text="로컬에 설치된 Codex CLI(codex 명령어)를 AI 엔진으로 사용한다. Claude CLI가 비활성일 때 대체 엔진으로 동작한다."
+                               FontSize="11" FontFamily="{StaticResource PawFont}"
+                               Foreground="{DynamicResource PawTextSecondary}" TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="CodexCliStatusDot" Width="8" Height="8"
+                                 Fill="{DynamicResource PawStatusDotIdle}"
+                                 Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="CodexCliStatusText" Text="확인 중..."
+                                   FontSize="12" FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <ui:Button Content="연결 확인" Appearance="Secondary"
+                                   FontFamily="{StaticResource PawFont}" Padding="10,4"
+                                   Click="TestCodexCli_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- AI Engine API Keys -->
             <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
                 <StackPanel>

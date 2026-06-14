@@ -9,6 +9,7 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly ApiKeyService _apiKeyService;
     private readonly ClaudeCliService _claudeCliService;
+    private readonly CodexCliService _codexCliService;
     private readonly ChatBotConfigService _chatBotConfigService;
     private readonly PubSubPullService _pubSubPullService;
     private readonly WebSocketServerService _webSocketServerService;
@@ -35,6 +36,10 @@ public partial class SettingsViewModel : ObservableObject
     // Claude CLI
     [ObservableProperty] private bool _claudeCliAvailable;
     [ObservableProperty] private bool _claudeCliEnabled;
+
+    // Codex CLI
+    [ObservableProperty] private bool _codexCliAvailable;
+    [ObservableProperty] private bool _codexCliEnabled;
 
     // Chat Bot
     [ObservableProperty] private bool _botEnabled;
@@ -91,6 +96,7 @@ public partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(
         ApiKeyService apiKeyService,
         ClaudeCliService claudeCliService,
+        CodexCliService codexCliService,
         ChatBotConfigService chatBotConfigService,
         PubSubPullService pubSubPullService,
         WebSocketServerService webSocketServerService,
@@ -104,6 +110,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         _apiKeyService = apiKeyService;
         _claudeCliService = claudeCliService;
+        _codexCliService = codexCliService;
         _chatBotConfigService = chatBotConfigService;
         _pubSubPullService = pubSubPullService;
         _webSocketServerService = webSocketServerService;
@@ -240,6 +247,10 @@ public partial class SettingsViewModel : ObservableObject
             ClaudeCliAvailable = await _claudeCliService.IsAvailableAsync();
             ClaudeCliEnabled = await _claudeCliService.IsEnabledAsync();
 
+            // Codex CLI
+            CodexCliAvailable = await _codexCliService.IsAvailableAsync();
+            CodexCliEnabled = await _codexCliService.IsEnabledAsync();
+
             // Chat Bot — 테이블 미존재 시에도 나머지 설정은 정상 로드
             try
             {
@@ -373,6 +384,21 @@ public partial class SettingsViewModel : ObservableObject
             await _claudeCliService.SetEnabledAsync(newState);
             ClaudeCliEnabled = newState;
             SuccessMessage = newState ? "Claude CLI 활성화됨" : "Claude CLI 비활성화됨";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+
+    // === Codex CLI ===
+
+    [RelayCommand]
+    private async Task ToggleCodexCliAsync()
+    {
+        try
+        {
+            var newState = !CodexCliEnabled;
+            await _codexCliService.SetEnabledAsync(newState);
+            CodexCliEnabled = newState;
+            SuccessMessage = newState ? "Codex CLI 활성화됨" : "Codex CLI 비활성화됨";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
     }

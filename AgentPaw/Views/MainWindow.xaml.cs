@@ -16,7 +16,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _instructionsInitialized;
     private bool _settingsInitialized;
     private bool _llmInitialized;
-    private bool _integrationInitialized;
     private bool _otherSettingsInitialized;
     private bool _devAgentInitialized;
     private SettingsViewModel? _settingsVm;
@@ -209,19 +208,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         ShowPage("settings");
     }
 
-    private void NavApiIntegration_Click(object sender, RoutedEventArgs e)
-    {
-        if (!_integrationInitialized)
-        {
-            _settingsVm ??= App.GetService<SettingsViewModel>();
-            _integrationPage = new IntegrationSettingsPage();
-            _integrationPage.Initialize(_settingsVm);
-            _integrationInitialized = true;
-        }
-        SettingsPageHost.Content = _integrationPage;
-        ShowPage("settings");
-    }
-
     private void NavOtherSettings_Click(object sender, RoutedEventArgs e)
     {
         if (!_otherSettingsInitialized)
@@ -238,7 +224,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     // Page instance caches
     private SettingsPage? _settingsPage;
     private LlmSettingsPage? _llmPage;
-    private IntegrationSettingsPage? _integrationPage;
     private OtherSettingsPage? _otherSettingsPage;
     private DevAgentPage? _devAgentPage;
 
