@@ -16,12 +16,12 @@ public class AiClientService
 
     private static readonly Dictionary<string, string> ClaudeModelMap = new()
     {
-        ["claude-sonnet"] = "claude-sonnet-4-6-20250627",
-        ["claude-opus"] = "claude-opus-4-6-20250627",
-        ["claude-haiku"] = "claude-haiku-4-5-20251001",
+        ["claude-sonnet"] = "claude-sonnet-4-6",
+        ["claude-opus"] = "claude-opus-4-8",
+        ["claude-haiku"] = "claude-haiku-4-5",
         // 폐기 모델 호환 매핑
-        ["claude-sonnet-4-20250514"] = "claude-sonnet-4-6-20250627",
-        ["claude-opus-4-20250514"] = "claude-opus-4-6-20250627"
+        ["claude-sonnet-4-20250514"] = "claude-sonnet-4-6",
+        ["claude-opus-4-20250514"] = "claude-opus-4-8"
     };
 
     private static readonly Dictionary<string, string> GeminiModelMap = new()
@@ -233,18 +233,20 @@ public class AiClientService
                 messages.Add(new { role = t.Role, content = t.Content });
         messages.Add(new { role = "user", content = userMessage });
 
-        var request = new
+        // Opus 4.7+ · Fable·Mythos 계열은 temperature/top_p/top_k 를 거부한다(400). 해당 모델엔 미포함.
+        var request = new Dictionary<string, object?>
         {
-            model = resolvedModel,
-            max_tokens = maxTokens,
-            temperature,
-            system = new[]
+            ["model"] = resolvedModel,
+            ["max_tokens"] = maxTokens,
+            ["system"] = new[]
             {
                 new { type = "text", text = systemPrompt, cache_control = new { type = "ephemeral" } }
             },
-            stream = true,
-            messages
+            ["stream"] = true,
+            ["messages"] = messages
         };
+        if (!ModelRejectsSamplingParams(resolvedModel))
+            request["temperature"] = temperature;
 
         var json = JsonSerializer.Serialize(request);
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
@@ -446,6 +448,13 @@ public class AiClientService
             OutputTokens = outputTokens
         };
     }
+
+    // Opus 4.7+ · Fable·Mythos 계열은 temperature/top_p/top_k 샘플링 파라미터를 거부한다(400 invalid_request).
+    private static bool ModelRejectsSamplingParams(string model)
+        => model.StartsWith("claude-opus-4-8", StringComparison.Ordinal)
+        || model.StartsWith("claude-opus-4-7", StringComparison.Ordinal)
+        || model.StartsWith("claude-fable", StringComparison.Ordinal)
+        || model.StartsWith("claude-mythos", StringComparison.Ordinal);
 
     // 히스토리가 없으면 원본 메시지, 있으면 이전 대화를 텍스트로 prefix해서 반환
     private static string FormatHistoryAsText(string userMessage, IReadOnlyList<ConversationTurn>? history)
