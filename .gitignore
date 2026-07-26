@@ -123,3 +123,14 @@ Docs/
 !Docs/.gitkeep
 
 # === end ContextBuilder 표준 .gitignore ===
+
+secrets.json
+firebase-adminsdk*.json
+serviceAccountKey*.json
+
+# 패키지 레지스트리·범용 인증 설정 (auth token 평문 — SSOT git_민감파일관리.md v1.3.0)
+.npmrc
+.yarnrc.yml
+.pypirc
+.netrc
+_netrc
