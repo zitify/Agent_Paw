@@ -63,6 +63,7 @@ CLAUDE.md
 CLAUDE.local.md
 AGENTS.md
 AGENTS.local.md
+ARCHITECTURE.md
 .claude/
 
 # 환경 변수·시크릿
