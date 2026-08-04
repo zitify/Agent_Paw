@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -45,8 +46,9 @@ public class WebSocketServerService
             IsRunning = true;
             _ = AcceptConnectionsAsync(_cts.Token);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"[WebSocketServer] Start failed: {ex.Message}");
             IsRunning = false;
         }
     }
@@ -58,12 +60,12 @@ public class WebSocketServerService
         foreach (var client in _clients.Values)
         {
             try { client.Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "서버 종료", CancellationToken.None).Wait(1000); }
-            catch { }
+            catch (Exception ex) { Debug.WriteLine($"[WebSocketServer] client close: {ex.Message}"); }
         }
         _clients.Clear();
 
         try { _listener?.Stop(); }
-        catch { }
+        catch (Exception ex) { Debug.WriteLine($"[WebSocketServer] listener stop: {ex.Message}"); }
 
         _listener = null;
         _cts?.Dispose();
@@ -89,7 +91,10 @@ public class WebSocketServerService
             }
             catch (ObjectDisposedException) { break; }
             catch (HttpListenerException) { break; }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[WebSocketServer] accept loop: {ex.Message}");
+            }
         }
     }
 

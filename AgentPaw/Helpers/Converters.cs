@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -139,7 +140,10 @@ public class AvatarToImageConverter : IValueConverter
                 return image;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Converters] image load failed: {ex.Message}");
+        }
 
         return null;
     }

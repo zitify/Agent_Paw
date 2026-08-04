@@ -278,12 +278,12 @@ public class AiClientService
             if (line == null) break;
             if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
 
-            var data = line[5..].TrimStart();
-            if (string.IsNullOrEmpty(data) || data == "[DONE]") continue;
+            var ssePayload = line[5..].TrimStart();
+            if (string.IsNullOrEmpty(ssePayload) || ssePayload == "[DONE]") continue;
 
             try
             {
-                using var doc = JsonDocument.Parse(data);
+                using var doc = JsonDocument.Parse(ssePayload);
                 var root = doc.RootElement;
                 if (!root.TryGetProperty("type", out var typeEl)) continue;
                 var type = typeEl.GetString();
@@ -395,12 +395,12 @@ public class AiClientService
             if (line == null) break;
             if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
 
-            var data = line[5..].TrimStart();
-            if (string.IsNullOrEmpty(data)) continue;
+            var ssePayload = line[5..].TrimStart();
+            if (string.IsNullOrEmpty(ssePayload)) continue;
 
             try
             {
-                using var doc = JsonDocument.Parse(data);
+                using var doc = JsonDocument.Parse(ssePayload);
                 var root = doc.RootElement;
 
                 if (root.TryGetProperty("candidates", out var cands) && cands.ValueKind == JsonValueKind.Array && cands.GetArrayLength() > 0)

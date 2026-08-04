@@ -106,9 +106,9 @@ public class ToolExecutorService
         if (!File.Exists(full))
             return Fail($"파일 없음: {RelOf(root, full)}");
 
-        var info = new FileInfo(full);
-        if (info.Length > MaxFileBytes)
-            return Fail($"파일이 너무 크다 ({info.Length} bytes)");
+        var fileInfo = new FileInfo(full);
+        if (fileInfo.Length > MaxFileBytes)
+            return Fail($"파일이 너무 크다 ({fileInfo.Length} bytes)");
 
         // 바이너리 감지 (UTF8로 디코드 실패 또는 NUL 바이트 포함)
         var bytes = await File.ReadAllBytesAsync(full, ct);
@@ -128,7 +128,7 @@ public class ToolExecutorService
         var truncated = content.Length > MaxResultChars;
         var body = truncated ? content[..MaxResultChars] + "\n...[truncated]" : content;
 
-        return Ok($"[{RelOf(root, full)}, {info.Length} bytes{(truncated ? ", truncated" : "")}]\n{body}");
+        return Ok($"[{RelOf(root, full)}, {fileInfo.Length} bytes{(truncated ? ", truncated" : "")}]\n{body}");
     }
 
     private static ToolExecutionResult ListDir(string root, Dictionary<string, object?> args)
@@ -193,9 +193,9 @@ public class ToolExecutorService
         if (!File.Exists(full))
             return Fail($"파일 없음: {RelOf(root, full)}");
 
-        var info = new FileInfo(full);
-        if (info.Length > MaxFileBytes)
-            return Fail($"파일이 너무 크다 ({info.Length} bytes)");
+        var fileInfo = new FileInfo(full);
+        if (fileInfo.Length > MaxFileBytes)
+            return Fail($"파일이 너무 크다 ({fileInfo.Length} bytes)");
 
         var content = await File.ReadAllTextAsync(full, new System.Text.UTF8Encoding(false), ct);
         var count   = CountOccurrences(content, oldText);

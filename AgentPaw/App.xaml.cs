@@ -255,8 +255,9 @@ public partial class App : Application
             {
                 var services = _host.Services;
 
-                // Claude CLI 콜드스타트 선제거 — CLI 활성 시 프로세스를 미리 데워 풀에 채운다 (UI 비차단)
+                // Claude·Codex CLI 콜드스타트 선제거 — CLI 활성 시 프로세스를 미리 데워 풀에 채운다 (UI 비차단)
                 _ = services.GetRequiredService<ClaudeCliService>().EnsureWarmStartedAsync();
+                _ = services.GetRequiredService<CodexCliService>().EnsureWarmStartedAsync();
 
                 var startups = new[]
                 {
@@ -290,18 +291,28 @@ public partial class App : Application
     private static async Task SafeStartAsync(Func<Task> start)
     {
         try { await start().ConfigureAwait(false); }
-        catch { /* 설정 미완료·포트 충돌 등 무시 */ }
+        catch (Exception ex)
+        {
+            // 설정 미완료·포트 충돌 등 — 앱 기동은 계속
+            System.Diagnostics.Debug.WriteLine($"[App] SafeStartAsync: {ex.Message}");
+        }
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
         // 서비스 정리
-        try { _host.Services.GetRequiredService<ClaudeCliService>().KillAll(); } catch { }
-        try { await _host.Services.GetRequiredService<PubSubPullService>().StopAsync(); } catch { }
-        try { await _host.Services.GetRequiredService<SlackSocketModeService>().StopAsync(); } catch { }
-        try { await _host.Services.GetRequiredService<TelegramPollingService>().StopAsync(); } catch { }
-        try { _host.Services.GetRequiredService<WebSocketServerService>().Stop(); } catch { }
-        try { _host.Services.GetRequiredService<StatusHttpService>().Stop(); } catch { }
+        try { _host.Services.GetRequiredService<ClaudeCliService>().KillAll(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] KillAll: {ex.Message}"); }
+        try { await _host.Services.GetRequiredService<PubSubPullService>().StopAsync(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] PubSub stop: {ex.Message}"); }
+        try { await _host.Services.GetRequiredService<SlackSocketModeService>().StopAsync(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] Slack stop: {ex.Message}"); }
+        try { await _host.Services.GetRequiredService<TelegramPollingService>().StopAsync(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] Telegram stop: {ex.Message}"); }
+        try { _host.Services.GetRequiredService<WebSocketServerService>().Stop(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS stop: {ex.Message}"); }
+        try { _host.Services.GetRequiredService<StatusHttpService>().Stop(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] StatusHttp stop: {ex.Message}"); }
 
         await _host.StopAsync();
         _host.Dispose();

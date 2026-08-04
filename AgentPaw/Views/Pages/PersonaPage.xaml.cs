@@ -340,8 +340,8 @@ public partial class PersonaPage : UserControl
         _vm.PersonaFallbackModel = fallbackModel?.Alias;
         _vm.PersonaAvatar = _pendingAvatarPath;
 
-        if (float.TryParse(PersonaTempInput.Text, out var temp))
-            _vm.PersonaTemperature = temp;
+        if (float.TryParse(PersonaTempInput.Text, out var temperature))
+            _vm.PersonaTemperature = temperature;
         if (int.TryParse(PersonaTokensInput.Text, out var tokens))
             _vm.PersonaMaxTokens = tokens;
 
